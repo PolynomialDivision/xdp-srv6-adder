@@ -74,55 +74,51 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   oldr_ipv6_orig_hdr = *ipv6_orig_header;
   // ------------------------------------
 
-	// -------- checking --------
+  // -------- checking --------
 
-	int inprefix=0;
-	int j;
-	for (j = 0; j <= MAX_CIDR; j++){
-		__u32 key = (__u32)j;
-		struct cidr *cidr = bpf_map_lookup_elem(&prefixmap, &key);
-		if (!cidr)
-			goto loop;
-		int prefix_limit = 15 - ((128 - cidr->prefix) / 8);
-		int i;
-		for (i = 0; i < 16; i++)
-		{
-			__u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
-			__u8 net2 = cidr->addr.v6.s6_addr[i];
+  int inprefix = 0;
+  int j;
+  for (j = 0; j <= MAX_CIDR; j++) {
+    __u32 key = (__u32)j;
+    struct cidr *cidr = bpf_map_lookup_elem(&prefixmap, &key);
+    if (!cidr)
+      goto loop;
+    int prefix_limit = 15 - ((128 - cidr->prefix) / 8);
+    int i;
+    for (i = 0; i < 16; i++) {
+      __u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+      __u8 net2 = cidr->addr.v6.s6_addr[i];
 
-			if (i >= prefix_limit)
-				break;
+      if (i >= prefix_limit)
+        break;
 
-			if (net1 != net2)
-			{
-				goto loop;
-			}
-		}
-		if (i >= 16)
-			goto loop;
+      if (net1 != net2) {
+        goto loop;
+      }
+    }
+    if (i >= 16)
+      goto loop;
 
-		__u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
-		__u8 net2 = cidr->addr.v6.s6_addr[i];
-		__u8 mask = ~((1 << ((128 - cidr->prefix) % 8)) - 1);
+    __u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+    __u8 net2 = cidr->addr.v6.s6_addr[i];
+    __u8 mask = ~((1 << ((128 - cidr->prefix) % 8)) - 1);
 
-		net1 &= mask;
-		net2 &= mask;
+    net1 &= mask;
+    net2 &= mask;
 
-		if (net1 != net2)
-		{
-			goto loop;
-		}
+    if (net1 != net2) {
+      goto loop;
+    }
 
-		// if we reach here, some prefix is announced
-		inprefix=1;
-		break;
-loop:
-		continue;
-	}
+    // if we reach here, some prefix is announced
+    inprefix = 1;
+    break;
+  loop:
+    continue;
+  }
 
-	if (!inprefix)
-		goto out;
-
+  if (!inprefix)
+    goto out;
 
   // ---------------
 
@@ -143,18 +139,25 @@ loop:
   // ------------------------------------------
 
   // -------------- Copy Header Back as encap header -----
+
+  __u32 keysegleft = 0;
+  int *segleft = bpf_map_lookup_elem(&segleftmap, &keysegleft);
+  if (!segleft)
+    goto out;
+
+  __u32 keyencapheader = (__u32)(*segleft);
+  if (keyencapheader > MAX_SEG_LIST)
+    goto out;
+  struct cidr *encapheader = bpf_map_lookup_elem(&segpathmap, &keyencapheader);
+  if (!encapheader)
+    goto out;
+
   struct ipv6hdr *ip6_srv6_encap = (void *)(ehdr + 1);
   if (ip6_srv6_encap + 1 > data_end)
     goto out;
   *ip6_srv6_encap = oldr_ipv6_orig_hdr;
   ip6_srv6_encap->nexthdr = IPV6_EXT_ROUTING;
-  ip6_srv6_encap->daddr.s6_addr[0] = 0x20;
-  ip6_srv6_encap->daddr.s6_addr[1] = 0x01;
-  int i;
-  for (i = 2; i < 15; i++)
-    ip6_srv6_encap->daddr.s6_addr[i] = 0x0;
-  ip6_srv6_encap->daddr.s6_addr[2] = 0x0;
-  ip6_srv6_encap->daddr.s6_addr[15] = 0x02;
+  __builtin_memcpy(ip6_srv6_encap->daddr.s6_addr, encapheader->addr.v6.s6_addr, 16);
 
   ip6_srv6_encap->payload_len += bpf_ntohs(offset);
   // ------------------------------------------
@@ -164,11 +167,6 @@ loop:
 
   struct ip6_addr_t *seg;
   struct ip6_srh_t *srh;
-
-  __u32 keysegleft = 0;
-  int* segleft = bpf_map_lookup_elem(&segleftmap, &keysegleft);
-  if (!segleft)
-    goto out;
 
   srh = (struct ip6_srh_t *)(void *)(ip6_srv6_encap + 1);
   if (srh + 1 > data_end)
@@ -194,10 +192,9 @@ loop:
     if (!cidr)
       goto out;
 
-	__builtin_memcpy(seg,cidr->addr.v6.s6_addr, 16);
+    __builtin_memcpy(seg, cidr->addr.v6.s6_addr, 16);
 
     seg = (struct in6_addr *)((char *)seg + sizeof(*seg));
-	
   }
   // ------------------------------------------
 out:
