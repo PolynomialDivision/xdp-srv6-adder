@@ -117,7 +117,7 @@ static void update_segpath_map(char *net, char *segpathstring, int segleft) {
   i = 0;
   seg = strtok(segpathstring, ",");
   while (seg != NULL && i < MAX_SEG_LIST) {
-    seglist[i] = *cidr_parse6(seg);
+    seglist[MAX_SEG_LIST-1-i] = *cidr_parse6(seg); // we reverse route so it is iproute2 behavior
     seg = strtok(NULL, ",");
     i++;
   }
