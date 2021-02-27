@@ -14,7 +14,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 
-#define MAX_SEG_LIST 1
+#define MAX_SEG_LIST 2
 #define MAX_CIDR 1
 
 struct cidr {
