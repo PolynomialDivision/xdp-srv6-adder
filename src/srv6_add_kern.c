@@ -44,7 +44,7 @@ struct bpf_map_def SEC("maps") segpathmap = {
     .max_entries = MAX_SEG_LIST,
 };
 
-struct bpf_map_def SEC("maps") lastentry = {
+struct bpf_map_def SEC("maps") segleftmap = {
     .type = BPF_MAP_TYPE_ARRAY,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u32),
@@ -67,19 +67,64 @@ int xdp_srv6_add(struct xdp_md *ctx) {
     goto out;
   }
 
-  __u32 bla = 0;
-  struct cidr *cidr = bpf_map_lookup_elem(&prefixmap, &bla);
-
   // ----- Copy Orig IPv6 Header -------
   struct ipv6hdr *ipv6_orig_header = (void *)(ehdr + 1);
   if (ipv6_orig_header + 1 > data_end)
     goto out;
   oldr_ipv6_orig_hdr = *ipv6_orig_header;
-
-  if (ipv6_orig_header->daddr.s6_addr[0] != 0x20)
-    goto out;
-
   // ------------------------------------
+
+	// -------- checking --------
+
+	int inprefix=0;
+	int j;
+	for (j = 0; j <= MAX_CIDR; j++){
+		__u32 key = (__u32)j;
+		struct cidr *cidr = bpf_map_lookup_elem(&prefixmap, &key);
+		if (!cidr)
+			goto loop;
+		int prefix_limit = 15 - ((128 - cidr->prefix) / 8);
+		int i;
+		for (i = 0; i < 16; i++)
+		{
+			__u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+			__u8 net2 = cidr->addr.v6.s6_addr[i];
+
+			if (i >= prefix_limit)
+				break;
+
+			if (net1 != net2)
+			{
+				goto loop;
+			}
+		}
+		if (i >= 16)
+			goto loop;
+
+		__u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+		__u8 net2 = cidr->addr.v6.s6_addr[i];
+		__u8 mask = ~((1 << ((128 - cidr->prefix) % 8)) - 1);
+
+		net1 &= mask;
+		net2 &= mask;
+
+		if (net1 != net2)
+		{
+			goto loop;
+		}
+
+		// if we reach here, some prefix is announced
+		inprefix=1;
+		break;
+loop:
+		continue;
+	}
+
+	if (!inprefix)
+		goto out;
+
+
+  // ---------------
 
   int offset = sizeof(struct ipv6hdr) + ipv6_lentest(MAX_SEG_LIST);
   if (bpf_xdp_adjust_head(ctx, -offset)) {
@@ -120,17 +165,21 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   struct ip6_addr_t *seg;
   struct ip6_srh_t *srh;
 
+  __u32 keysegleft = 0;
+  int* segleft = bpf_map_lookup_elem(&segleftmap, &keysegleft);
+  if (!segleft)
+    goto out;
+
   srh = (struct ip6_srh_t *)(void *)(ip6_srv6_encap + 1);
   if (srh + 1 > data_end)
     goto out;
   srh->nexthdr = 41;
   srh->hdrlen = 2 * MAX_SEG_LIST;
   srh->type = 4;
-  srh->segments_left = 0;
+  srh->segments_left = *segleft;
   srh->first_segment = MAX_SEG_LIST - 1;
   srh->flags = 0;
   srh->tag = 0;
-  // struct in6_addr v6;
 
   seg = (struct ip6_addr_t *)((char *)srh + sizeof(*srh));
   // seg = (struct in6_addr *)((char *)srh + sizeof(*srh));
@@ -140,11 +189,6 @@ int xdp_srv6_add(struct xdp_md *ctx) {
 
 #pragma clang loop unroll(full)
   for (int i = 0; i < MAX_SEG_LIST; i++) {
-    // seg->lo = bpf_cpu_to_be64(2 - lo);
-    // seg->hi = bpf_cpu_to_be64(hi);
-    //*seg = v6;
-    // seg = (struct ip6_addr_t *)((char *)seg + sizeof(*seg));
-
     __u32 key = (__u32)i;
     struct cidr *cidr = bpf_map_lookup_elem(&segpathmap, &key);
     if (!cidr)

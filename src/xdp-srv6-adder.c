@@ -93,9 +93,9 @@ static void update_prefix_map(char *net, int key, struct cidr *prefix) {
   }
 }
 
-static void update_segpath_map(char *net, char *segpathstring) {
+static void update_segpath_map(char *net, char *segpathstring, int segleft) {
   printf("Updating Segpath\n");
-  
+
   char *seg;
   struct cidr seglist[MAX_SEG_LIST];
 
@@ -115,7 +115,7 @@ static void update_segpath_map(char *net, char *segpathstring) {
 
   int i;
   i = 0;
-  seg = strtok(optarg, ",");
+  seg = strtok(segpathstring, ",");
   while (seg != NULL && i < MAX_SEG_LIST) {
     seglist[i] = *cidr_parse6(seg);
     seg = strtok(NULL, ",");
@@ -139,21 +139,53 @@ static void update_segpath_map(char *net, char *segpathstring) {
       return;
     }
   }
+
+  struct xdp_map xdp_map_segleft = {
+      .prog = "xdp_srv6_add",
+      .map = "segleftmap",
+      .map_want =
+          {
+              .key_size = sizeof(__u32),
+              .value_size = sizeof(__u32),
+              .max_entries = 1,
+          },
+      .net = net,
+  };
+
+  if (!xdp_map_segleft.net) {
+    fprintf(stderr, "invalid arguments\n");
+    return;
+  }
+
+  if (map_lookup(&xdp_map_segleft)) {
+    fprintf(stderr, "failed to xdp_map map\n");
+    return;
+  }
+
+  int segleftkey = 0;
+  if (bpf_map_update_elem(xdp_map_segleft.map_fd, &segleftkey, &segleft, 0) <
+      0) {
+    fprintf(stderr, "WARN: Failed to update bpf map file: err(%d):%s\n", errno,
+            strerror(errno));
+    return;
+  }
 }
 
 int main(int argc, char **argv) {
   struct cidr *prefix = NULL;
-  char *net = NULL;
+  char *net;
   char *segpath;
 
   int ch;
   int key = -1;
   bool do_update_prefix_map = false;
   bool do_update_segpath_map = false;
-  while ((ch = getopt(argc, argv, "d:f:p:k:s:")) != -1) {
+  int segleft = 0;
+  while ((ch = getopt(argc, argv, "d:f:p:k:s:l:")) != -1) {
     switch (ch) {
     case 'd':
       net = optarg;
+      //strcpy(net, optarg);
       break;
     case 'p':
       // parse prefix
@@ -161,12 +193,18 @@ int main(int argc, char **argv) {
       do_update_prefix_map = true;
       break;
     case 'k':
-      // parse prefix
       key = atoi(optarg);
       break;
     case 's':
+      // parse segmentpath
+      //strcpy(segpath, optarg);
       segpath = optarg;
       do_update_segpath_map = true;
+      break;
+    case 'l':
+      // parse segment left
+      segleft = atoi(optarg);
+      printf("Segleft: %d\n", segleft);
       break;
     default:
       fprintf(stderr, "Invalid argument\n");
@@ -178,7 +216,7 @@ int main(int argc, char **argv) {
     update_prefix_map(net, key, prefix);
 
   if (do_update_segpath_map)
-    update_segpath_map(net, segpath);
+    update_segpath_map(net, segpath, segleft);
 
   return 0;
 }
