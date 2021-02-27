@@ -13,9 +13,6 @@
 #define IPV6_ENCAP 41 // [RFC2473]
 #define IPV6_EXT_ROUTING 43
 
-#define MAX_SEG_LIST 2
-#define MAX_CIDR 3
-
 struct ip6_addr_t {
   unsigned long long hi;
   unsigned long long lo;
@@ -33,7 +30,7 @@ struct ip6_srh_t {
   struct ip6_addr_t segments[0];
 };
 
-struct bpf_map_def SEC("maps") prefix_map = {
+struct bpf_map_def SEC("maps") prefixmap = {
     .type = BPF_MAP_TYPE_ARRAY,
     .key_size = sizeof(__u32),
     .value_size = sizeof(struct cidr),
@@ -47,7 +44,7 @@ struct bpf_map_def SEC("maps") segpathmap = {
     .max_entries = MAX_SEG_LIST,
 };
 
-struct bpf_map_def SEC("maps") last_entry = {
+struct bpf_map_def SEC("maps") lastentry = {
     .type = BPF_MAP_TYPE_ARRAY,
     .key_size = sizeof(__u32),
     .value_size = sizeof(__u32),
@@ -69,6 +66,9 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   if (bpf_ntohs(ehdr->h_proto) != ETH_P_IPV6) {
     goto out;
   }
+
+  __u32 bla = 0;
+  struct cidr *cidr = bpf_map_lookup_elem(&prefixmap, &bla);
 
   // ----- Copy Orig IPv6 Header -------
   struct ipv6hdr *ipv6_orig_header = (void *)(ehdr + 1);

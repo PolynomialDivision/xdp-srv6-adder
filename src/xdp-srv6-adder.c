@@ -5,7 +5,7 @@
 #include "common.h"
 #include "uxdp.h"
 
-static bool cidr_print6(struct cidr *a) {
+/*static bool cidr_print6(struct cidr *a) {
   char *p;
 
   if (!a)
@@ -21,7 +21,7 @@ static bool cidr_print6(struct cidr *a) {
     printf("/%u", a->prefix);
 
   return true;
-}
+}*/
 
 static struct cidr *cidr_parse6(const char *s) {
   /* copied from owipcalc.c */
@@ -59,58 +59,126 @@ err:
   return NULL;
 }
 
-int main(int argc, char **argv) {
-  struct cidr *prefix = NULL;
+static void update_prefix_map(char *net, int key, struct cidr *prefix) {
+  printf("Updating Prefix Map\n");
 
   struct xdp_map xdp_map = {
       .prog = "xdp_srv6_add",
-      .map = "prefix_map",
+      .map = "prefixmap",
       .map_want =
           {
               .key_size = sizeof(__u32),
               .value_size = sizeof(struct cidr),
-              .max_entries = 3,
+              .max_entries = MAX_CIDR,
           },
+      .net = net,
   };
+
+  printf("Updating on device: %s\n", net);
+
+  if (!xdp_map.net) {
+    fprintf(stderr, "invalid arguments\n");
+    return;
+  }
+
+  if (map_lookup(&xdp_map)) {
+    fprintf(stderr, "failed to xdp_map map\n");
+    return;
+  }
+
+  if (bpf_map_update_elem(xdp_map.map_fd, &key, prefix, 0) < 0) {
+    fprintf(stderr, "WARN: Failed to update bpf map file: err(%d):%s\n", errno,
+            strerror(errno));
+    return;
+  }
+}
+
+static void update_segpath_map(char *net, char *segpathstring) {
+  printf("Updating Segpath\n");
+  
+  char *seg;
+  struct cidr seglist[MAX_SEG_LIST];
+
+  struct xdp_map xdp_map = {
+      .prog = "xdp_srv6_add",
+      .map = "segpathmap",
+      .map_want =
+          {
+              .key_size = sizeof(__u32),
+              .value_size = sizeof(struct cidr),
+              .max_entries = MAX_SEG_LIST,
+          },
+      .net = net,
+  };
+
+  printf("Updating on device: %s\n", net);
+
+  int i;
+  i = 0;
+  seg = strtok(optarg, ",");
+  while (seg != NULL && i < MAX_SEG_LIST) {
+    seglist[i] = *cidr_parse6(seg);
+    seg = strtok(NULL, ",");
+    i++;
+  }
+
+  if (!xdp_map.net) {
+    fprintf(stderr, "invalid arguments\n");
+    return;
+  }
+
+  if (map_lookup(&xdp_map)) {
+    fprintf(stderr, "failed to xdp_map map\n");
+    return;
+  }
+
+  for (int j = 0; j < MAX_SEG_LIST; j++) {
+    if (bpf_map_update_elem(xdp_map.map_fd, &j, &seglist[j], 0) < 0) {
+      fprintf(stderr, "WARN: Failed to update bpf map file: err(%d):%s\n",
+              errno, strerror(errno));
+      return;
+    }
+  }
+}
+
+int main(int argc, char **argv) {
+  struct cidr *prefix = NULL;
+  char *net = NULL;
+  char *segpath;
+
   int ch;
-  int key;
-  while ((ch = getopt(argc, argv, "d:f:p:k:")) != -1) {
+  int key = -1;
+  bool do_update_prefix_map = false;
+  bool do_update_segpath_map = false;
+  while ((ch = getopt(argc, argv, "d:f:p:k:s:")) != -1) {
     switch (ch) {
     case 'd':
-      xdp_map.net = optarg;
+      net = optarg;
       break;
     case 'p':
       // parse prefix
       prefix = cidr_parse6(optarg);
+      do_update_prefix_map = true;
       break;
     case 'k':
       // parse prefix
       key = atoi(optarg);
+      break;
+    case 's':
+      segpath = optarg;
+      do_update_segpath_map = true;
       break;
     default:
       fprintf(stderr, "Invalid argument\n");
       exit(-1);
     }
   }
-  if (!xdp_map.net) {
-    fprintf(stderr, "invalid arguments\n");
-    return -1;
-  }
 
-  if (map_lookup(&xdp_map)) {
-    fprintf(stderr, "failed to xdp_map map\n");
-    return -1;
-  }
+  if (do_update_prefix_map)
+    update_prefix_map(net, key, prefix);
 
-  printf("Updating Map with: ");
-  cidr_print6(prefix);
-
-  //int key = 0;
-  if (bpf_map_update_elem(xdp_map.map_fd, &key, prefix, 0) < 0) {
-    fprintf(stderr, "WARN: Failed to update bpf map file: err(%d):%s\n", errno,
-            strerror(errno));
-    return -1;
-  }
+  if (do_update_segpath_map)
+    update_segpath_map(net, segpath);
 
   return 0;
 }
