@@ -141,7 +141,7 @@ static void update_segpath_map(char *net, char *segpathstring, int segleft) {
   }
 
   struct xdp_map xdp_map_segleft = {
-      .prog = "xdp_srv6_add",
+      .prog = "xdp_srv6_add_inline",
       .map = "segleftmap",
       .map_want =
           {
