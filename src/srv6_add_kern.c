@@ -225,6 +225,10 @@ int xdp_srv6_add_inline(struct xdp_md *ctx) {
   oldr_ipv6_orig_hdr = *ipv6_orig_header;
   // ------------------------------------
 
+  // check if link local stuff
+  if (ipv6_orig_header->daddr.s6_addr[0] == 0xfe)
+    goto out;
+
   // -------- checking --------
   int inprefix = 0;
   int j;

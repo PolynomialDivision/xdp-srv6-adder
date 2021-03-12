@@ -15,7 +15,7 @@
 #include <stdbool.h>
 
 #define MAX_SEG_LIST 2
-#define MAX_CIDR 1
+#define MAX_CIDR 4
 
 struct cidr {
 	uint32_t prefix;
