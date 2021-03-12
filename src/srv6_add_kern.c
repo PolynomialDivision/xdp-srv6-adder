@@ -236,7 +236,7 @@ int xdp_srv6_add_inline(struct xdp_md *ctx) {
     int prefix_limit = 15 - ((128 - cidr->prefix) / 8);
     int i;
     for (i = 0; i < 16; i++) {
-      __u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+      __u8 net1 = ipv6_orig_header->saddr.s6_addr[i];
       __u8 net2 = cidr->addr.v6.s6_addr[i];
 
       if (i >= prefix_limit)
@@ -249,7 +249,7 @@ int xdp_srv6_add_inline(struct xdp_md *ctx) {
     if (i >= 16)
       goto loop;
 
-    __u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+    __u8 net1 = ipv6_orig_header->saddr.s6_addr[i];
     __u8 net2 = cidr->addr.v6.s6_addr[i];
     __u8 mask = ~((1 << ((128 - cidr->prefix) % 8)) - 1);
 
