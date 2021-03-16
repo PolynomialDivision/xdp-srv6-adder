@@ -72,10 +72,14 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   if (ipv6_orig_header + 1 > data_end)
     goto out;
   oldr_ipv6_orig_hdr = *ipv6_orig_header;
+
+  // check if link local
+  if (ipv6_orig_header->daddr.s6_addr[0] == 0xfe)
+    goto out;
+
   // ------------------------------------
 
   // -------- checking --------
-
   int inprefix = 0;
   int j;
   for (j = 0; j <= MAX_CIDR; j++) {
@@ -86,7 +90,7 @@ int xdp_srv6_add(struct xdp_md *ctx) {
     int prefix_limit = 15 - ((128 - cidr->prefix) / 8);
     int i;
     for (i = 0; i < 16; i++) {
-      __u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+      __u8 net1 = ipv6_orig_header->saddr.s6_addr[i];
       __u8 net2 = cidr->addr.v6.s6_addr[i];
 
       if (i >= prefix_limit)
@@ -99,7 +103,7 @@ int xdp_srv6_add(struct xdp_md *ctx) {
     if (i >= 16)
       goto loop;
 
-    __u8 net1 = ipv6_orig_header->daddr.s6_addr[i];
+    __u8 net1 = ipv6_orig_header->saddr.s6_addr[i];
     __u8 net2 = cidr->addr.v6.s6_addr[i];
     __u8 mask = ~((1 << ((128 - cidr->prefix) % 8)) - 1);
 
@@ -139,7 +143,6 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   // ------------------------------------------
 
   // -------------- Copy Header Back as encap header -----
-
   __u32 keysegleft = 0;
   int *segleft = bpf_map_lookup_elem(&segleftmap, &keysegleft);
   if (!segleft)
@@ -164,8 +167,6 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   // ------------------------------------------
 
   // ------ Create Srv6 Header ------------------
-  unsigned long long hi = 0x2001000000000000;
-
   struct ip6_addr_t *seg;
   struct ip6_srh_t *srh;
 
@@ -180,7 +181,8 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   srh->flags = 0;
   srh->tag = 0;
 
-  seg = (struct ip6_addr_t *)((char *)srh + sizeof(*srh));
+  seg = (struct ip6_addr_t *)(srh + 1);
+  //seg = (struct ip6_addr_t *)((char *)srh + sizeof(*srh));
   // seg = (struct in6_addr *)((char *)srh + sizeof(*srh));
 
   if (seg + MAX_SEG_LIST > data_end)
@@ -225,7 +227,7 @@ int xdp_srv6_add_inline(struct xdp_md *ctx) {
   oldr_ipv6_orig_hdr = *ipv6_orig_header;
   // ------------------------------------
 
-  // check if link local stuff
+  // check if link local
   if (ipv6_orig_header->daddr.s6_addr[0] == 0xfe)
     goto out;
 
@@ -317,6 +319,7 @@ int xdp_srv6_add_inline(struct xdp_md *ctx) {
                    16);
 
   ip6_srv6_encap->payload_len += bpf_ntohs(offset);
+  ip6_srv6_encap->hop_limit -= bpf_ntohs(MAX_SEG_LIST - *segleft);
   // ------------------------------------------
 
   // ------ Create Srv6 Header ------------------
