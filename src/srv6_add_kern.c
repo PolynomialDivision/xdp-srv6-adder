@@ -182,8 +182,6 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   srh->tag = 0;
 
   seg = (struct ip6_addr_t *)(srh + 1);
-  //seg = (struct ip6_addr_t *)((char *)srh + sizeof(*srh));
-  // seg = (struct in6_addr *)((char *)srh + sizeof(*srh));
 
   if (seg + MAX_SEG_LIST > data_end)
     goto out;
@@ -197,7 +195,7 @@ int xdp_srv6_add(struct xdp_md *ctx) {
 
     __builtin_memcpy(seg, cidr->addr.v6.s6_addr, 16);
 
-    seg = (struct in6_addr *)((char *)seg + sizeof(*seg));
+    seg = (struct ip6_addr_t *)(seg + 1);
   }
   // ------------------------------------------
 out:
@@ -361,7 +359,7 @@ int xdp_srv6_add_inline(struct xdp_md *ctx) {
 
     __builtin_memcpy(seg, cidr->addr.v6.s6_addr, 16);
 
-    seg = (struct in6_addr *)((char *)seg + sizeof(*seg));
+    seg = (struct ip6_addr_t *)(seg + 1);
   }
   // ------------------------------------------
 out:
