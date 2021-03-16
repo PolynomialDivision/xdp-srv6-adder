@@ -164,6 +164,8 @@ int xdp_srv6_add(struct xdp_md *ctx) {
                    16);
 
   ip6_srv6_encap->payload_len += bpf_ntohs(offset);
+  ip6_srv6_encap->hop_limit -=  bpf_ntohs(MAX_SEG_LIST - *segleft);
+
   // ------------------------------------------
 
   // ------ Create Srv6 Header ------------------
