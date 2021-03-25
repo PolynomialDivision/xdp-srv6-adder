@@ -1,27 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 
+/* based on ubpf */
+
 #include <arpa/inet.h>
 
 #include "common.h"
 #include "uxdp.h"
-
-/*static bool cidr_print6(struct cidr *a) {
-  char *p;
-
-  if (!a)
-    return NULL;
-
-  if (!(p = (char *)inet_ntop(AF_INET6, &a->addr.v6, a->buf.v6,
-                              sizeof(a->buf.v6))))
-    return false;
-
-  printf("%s", p);
-
-  if (a->prefix < 128)
-    printf("/%u", a->prefix);
-
-  return true;
-}*/
 
 static struct cidr *cidr_parse6(const char *s) {
   /* copied from owipcalc.c */
@@ -185,7 +169,6 @@ int main(int argc, char **argv) {
     switch (ch) {
     case 'd':
       net = optarg;
-      //strcpy(net, optarg);
       break;
     case 'p':
       // parse prefix
@@ -197,7 +180,6 @@ int main(int argc, char **argv) {
       break;
     case 's':
       // parse segmentpath
-      //strcpy(segpath, optarg);
       segpath = optarg;
       do_update_segpath_map = true;
       break;
