@@ -113,7 +113,12 @@ int xdp_srv6_add(struct xdp_md *ctx) {
 
   // ---------------
 
-  int offset = sizeof(struct ipv6hdr) + ipv6_lentest(MAX_SEG_LIST);
+  if(cidr->numsegs > MAX_SEG_LIST)
+  {
+    goto out;
+  }
+
+  int offset = sizeof(struct ipv6hdr) + ipv6_lentest(cidr->numsegs);
   if (bpf_xdp_adjust_head(ctx, -offset)) {
     goto out;
   }
@@ -135,7 +140,7 @@ int xdp_srv6_add(struct xdp_md *ctx) {
     goto out;
   *ip6_srv6_encap = oldr_ipv6_orig_hdr;
   ip6_srv6_encap->nexthdr = IPV6_EXT_ROUTING;
-  if (cidr->segleft >= MAX_SEG_LIST)
+  if (cidr->segleft >= cidr->numsegs)
   {
     goto out;
   }
@@ -143,7 +148,7 @@ int xdp_srv6_add(struct xdp_md *ctx) {
                    16);
 
   ip6_srv6_encap->payload_len += bpf_ntohs(offset);
-  ip6_srv6_encap->hop_limit -=  bpf_ntohs(MAX_SEG_LIST - cidr->segleft);
+  ip6_srv6_encap->hop_limit -=  bpf_ntohs(cidr->numsegs - cidr->segleft);
 
   // ------------------------------------------
 
@@ -155,20 +160,20 @@ int xdp_srv6_add(struct xdp_md *ctx) {
   if (srh + 1 > data_end)
     goto out;
   srh->nexthdr = 41;
-  srh->hdrlen = 2 * MAX_SEG_LIST;
+  srh->hdrlen = 2 * cidr->numsegs;
   srh->type = 4;
   srh->segments_left = cidr->segleft;
-  srh->first_segment = MAX_SEG_LIST - 1;
+  srh->first_segment = cidr->numsegs - 1;
   srh->flags = 0;
   srh->tag = 0;
 
   seg = (struct ip6_addr_t *)(srh + 1);
 
-  if (seg + MAX_SEG_LIST > data_end)
+  if (seg + cidr->numsegs > data_end)
     goto out;
 
 #pragma clang loop unroll(full)
-  for (int i = 0; i < MAX_SEG_LIST; i++) {
+  for (int i = 0; i < cidr->numsegs; i++) {
     __builtin_memcpy(seg, cidr->segpath[i].s6_addr, 16);
 
     seg = (struct ip6_addr_t *)(seg + 1);

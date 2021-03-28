@@ -20,6 +20,7 @@
 struct cidr {
 	uint32_t segleft;
 	uint32_t prefix;
+	uint32_t numsegs;
 	struct in6_addr segpath[MAX_SEG_LIST];
 	union {
 		struct in6_addr v6;

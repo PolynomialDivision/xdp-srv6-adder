@@ -67,6 +67,9 @@ static void update_prefix_map(char *net, int key, struct cidr *prefix, char *seg
     seg = strtok(NULL, ",");
     i++;
   }
+  prefix->numsegs = i;
+  printf("Numsegs: %d\n",prefix->numsegs);
+
   printf("Segpath Parsing Finished!\n");
 
   prefix->segleft = segleft;
